@@ -41,14 +41,16 @@ you must first include and link the following libraries: <br/>
  
  A typical BlockSp code structure to solve Ax = b is
 
-	int n;					 //vector length/matrix size <br/>
-	int constexpr B; //solArray blocksize, defined at compile time	 <br/>
-	int constexpr D; //solArray dimension, defined at compile time	 <br/>
-	BlockSp::BlockSp<double, B*D> A(n); <br/>
-	//Assemble A <br/>
-	BlockSp::solArray<double, B, D> b(n); <br/>
-	//Assemble b <br/>
+ ```
+	int n;           //vector length/matrix size 
+	int constexpr B; //solArray blocksize, defined at compile time	 
+	int constexpr D; //solArray dimension, defined at compile time	 
+	BlockSp::BlockSp<double, B*D> A(n); 
+	//Assemble A 
+	BlockSp::solArray<double, B, D> b(n); 
+	//Assemble b 
 	auto x { BlockSp::ez::sor_pGMRES(A, B) }; //solve Ax = b
+```
 
 /////////////////////////////////////////////////////////////
 
@@ -60,7 +62,7 @@ blocksp_containers.hpp <br/>
 	solArray  --  A multi-dimensioned block vector. <br/>
 	the file also includes the dot product, infinity norm, and two norm of solArrays. <br/>
   
-	 
+```	 
 	The containers use the following template parameters, specified at compile time: <br/>
     Data type T  --  float, double, std::complex<float>, and std::complex<double>. <br/>
 	  int       B  --  block size of the solArray. <br/>
@@ -68,6 +70,7 @@ blocksp_containers.hpp <br/>
 	  Note: the block size of a BlockSp matrix it typically B or B*D.		<br/>
 		Setting B = D = 1 reduces the problem to regular sparse linear algebra. <br/>
 		Testing indicates that the code often runs fastest when B = 2 and D = 1, use when applicable.		
+```
 
 blocksp_multiply.hpp	<br/>
 	bsmm	    --  Block sparse matrix-matrix multiplication. <br/>
