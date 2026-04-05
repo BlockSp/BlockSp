@@ -1,0 +1,70 @@
+How to install and set up BlockSp for Visual Studio.
+For BlockSp, version 1.0. As of March 2026.
+
+Installation
+
+(1) You can download BlockSp via
+git clone https://github.com/BlockSp/BlockSp.git
+or visit https://BlockSp.github.io
+
+BlockSp is a header only C++ library with two external library dependencies.
+Place the library folder where your compiler can find it.
+Then include it in your code via #include "blocksp_include.hpp".
+
+(1.1) You must also download the following two external libraries to run BlockSp:
+	
+	- Intel's Math Kernal Library (MKL) -- for dense/block linear algebra
+			https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl-download.html
+	
+	- blitz++ -- A high-performance matrix, vector, and multi-dimension array library.
+			https://github.com/blitzpp/blitz
+
+Tests for BlockSp and comparisons to the Eigen linear algebra library 
+can be found in "blocksp_tests.hpp" and "blocksp_eigen_compare.hpp". 
+Eigen comparisons require the installation of the Eigen library.
+	https://libeigen.gitlab.io/
+
+////////////////////////////////////////////////////////
+
+Set up
+
+Once the libraries are installed, we can now proceed to setting up your
+Visual Studio environment. The majority of the work involves setting up MKL.
+
+NOTE: BlockSp requires C++20 or later.
+NOTE: make these changes to All Configurations, Platform x64
+
+(2) Under project properties, navigate to VC++ directories
+	(2.1) Add the following paths to Include Directories
+	...\(blitz_location)\blitz-0.10 
+	...\(MKL_location)\latest\include\
+	...\(MKL_location)\latest\include\mkl\intel64
+	...\(BlockSp_location)\BlockSp
+
+	(2.2) Add the following to Library Directories
+	...\(MKL location)\latest\lib
+
+(2) Under project properties, go to the Linker 
+(2.1) Add the following to Additional Dependencies
+	...\(MKL_location)\latest\lib\mkl_intel_lp64.lib
+	...\(MKL_location)\latest\lib\mkl_intel_thread.lib
+	...\(MKL_location)\mkl\latest\lib\mkl_core.lib
+	...\(oneAPI_location)\compiler\latest\lib\libiomp5md.lib
+
+(2.2) Change the SubSystem to Console
+
+(3) Under project properties, go to Debugging,
+		Add the following to Environment:
+			PATH=(oneAPI_location)\compiler\latest\bin;%PATH%
+		Note: A restart may be required for after changing environment variables
+
+(4) In the project settings
+	(a) Turn off SDL checks
+	(b) Change C++ Language Standard to /std:c++latest 
+	(c) Turn off precompiled headers
+	(d) Increase stack size from 1MB to at least 10MB. 
+
+Note: (BlockSp_location), (blitz_location), (MKL_location), and (oneAPI_location) are
+the path to your BlockSp, blitz++, MKL, and oneAPI folders, which you must find and provide.
+
+////////////////////////////////////////////////////////
