@@ -63,12 +63,12 @@ blocksp_containers.hpp <br/>
 	the file also includes the dot product, infinity norm, and two norm of solArrays. <br/>
   
 ```	 
-	The containers use the following template parameters, specified at compile time: <br/>
-    Data type T  --  float, double, std::complex<float>, and std::complex<double>. <br/>
-	  int       B  --  block size of the solArray. <br/>
-	  int       D  --  dimension of the solArray. D = 1 is the default. <br/>
-	  Note: the block size of a BlockSp matrix it typically B or B*D.		<br/>
-		Setting B = D = 1 reduces the problem to regular sparse linear algebra. <br/>
+	The containers use the following template parameters, specified at compile time:
+    Data type T  --  float, double, std::complex<float>, and std::complex<double>.
+	  int       B  --  block size of the solArray.
+	  int       D  --  dimension of the solArray. D = 1 is the default. 
+	  Note: the block size of a BlockSp matrix it typically B or B*D.		
+		Setting B = D = 1 reduces the problem to regular sparse linear algebra.
 		Testing indicates that the code often runs fastest when B = 2 and D = 1, use when applicable.		
 ```
 

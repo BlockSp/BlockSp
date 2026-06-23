@@ -194,7 +194,7 @@ namespace eigen_comparison
 		std::cout << "EIGEN" << std::endl;
 		std::cout << "//////////////////////////////////////" << std::endl;
 		std::cout << std::endl;
-
+		
 		//Eigen's BICGSTAB, no preconditioner
 		if (noPre)
 		{
@@ -261,7 +261,7 @@ namespace eigen_comparison
 					std::cout << "error:                     " << (x_CG - x_eig).template lpNorm<Eigen::Infinity>() << std::endl;
 					std::cout << std::endl;
 				}
-
+				
 				//Eigen's CG, Diagonal preconditioner
 				{
 					start = std::chrono::steady_clock::now();
@@ -303,7 +303,7 @@ namespace eigen_comparison
 		std::cout << "BlockSp, B = " << B << ", D = " << D << std::endl;
 		std::cout << "//////////////////////////////////////" << std::endl;
 		std::cout << std::endl;
-
+		
 		if (noPre)
 		{
 			//pGMRES, no preconditioner, no restart.
@@ -326,7 +326,7 @@ namespace eigen_comparison
 			}
 		}
 		//*/
-
+		
 		//block diagonal precondtioner
 		if (diag)
 		{
@@ -418,7 +418,7 @@ namespace eigen_comparison
 					std::cout << "error                            " << BlockSp::infNorm(x_bsp - x_sol_bsp) << std::endl;
 					std::cout << std::endl;
 				}
-
+				
 				//pCG with digaonal preconditioner.
 				if (diag)
 				{
@@ -498,8 +498,8 @@ namespace eigen_comparison
 					}
 			};
 		for (int im = 0; im < l; ++im)
-			for (const auto& icol : ASym.colInd(im))
-				fill_trip(im, icol, ASym(im, icol));
+			for (const auto& ent : ASym.get_entries(im))
+				fill_trip(im, ent.colInd(), ASym(im, ent.colInd()));
 
 		//compare Eigen and BlockSp, random normal solution
 		eigen_compare<T, B, D>(trip, nullptr, nullptr, true, true, true, false, false);
@@ -599,16 +599,12 @@ namespace eigen_comparison
 		buildProblem(coefficients, b_eig, n);
 
 		///Compare Eigen and BlockSp
-		eigen_compare<double, B, D>(Eigen_Trip(coefficients, m, m), nullptr, &b_eig, true);
+		eigen_compare<double, B, D>(Eigen_Trip(coefficients, m, m), nullptr, &b_eig, true, true, true);
 		std::cout << "end eigenSparseExample_compare" << std::endl;
 		std::cout << std::endl;
 	}
 
-	/////////////////////////////
-	//SparseSuite tests
 
-	//Note: you must first download the test matrix and set the
-	//matrix location to the correct path.
 
 	
 	///LDG_2D_vecLap_test - compare Eigen and BlockSp with a linear system originating
@@ -635,10 +631,17 @@ namespace eigen_comparison
 		auto b{ mtxArray_to_EigenVector<double>(mtx_b, 1) };
 
 		//Compare Eigen and BlockSp, random normal solution
-		eigen_compare<double, B, D>(A_trip, &x, &b, true);
+		eigen_compare<double, B, D>(A_trip, &x, &b, true, true);
 		std::cout << "end LDG_2D_vecLap_test" << std::endl;
 		std::cout << std::endl;
 	}
+
+	/////////////////////////////
+	//SparseSuite tests
+
+	//Note: you must first download the test matrix and set the
+	//matrix location to the correct path.
+
 
 	/*
 	///Compare Eigen and BlockSp for SparseSuite rdb5000 matrix.
@@ -711,7 +714,7 @@ namespace eigen_comparison
 	}
 	//*/
 
-
+	
 	///////////////////////////////
 	//Matrix converters
 	///////////////////////////////

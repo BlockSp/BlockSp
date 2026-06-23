@@ -55,15 +55,15 @@ namespace BlockSp
 			else assert(A.m() == B.m());
 
 			BlockSp<T, M> C;
-			int m_m = A.m();
-			int m_n = A.n();
-			if (!Atran)	C = BlockSp<T, M>(m_m, B.n());
-			else C = BlockSp<T, M>(m_n, B.n());
+			int m = A.m();
+			int n = A.n();
+			if (!Atran)	C = BlockSp<T, M>(m, B.n());
+			else C = BlockSp<T, M>(n, B.n());
 
 			if (!Atran)
 			{
 				//pre determine sparsity structure 
-				std::vector<int> sparsity(m_m, 0);
+				std::vector<std::unordered_set<int>> sparsity(m);
 				for (int imA = 0; imA < A.m(); ++imA) //scan each row of A 
 				{	//scan each column in that row of A, its col number...
 					for (int inA = 0; inA < A.colSize(imA); ++inA)
@@ -71,18 +71,19 @@ namespace BlockSp
 						int colIndA = A.colInd(imA, inA);
 						//...becomes the row number in B, scan each column in that row of B 
 						for (int inB = 0; inB < B.colSize(colIndA); ++inB)
-							++sparsity[imA];
+						{
+							int colIndB = B.colInd(colIndA, inB);
+							sparsity[imA].emplace(colIndB);
+						}
 					}
 				}
 				//reserve space in the BlockSp's vectors, matching the sparsity structure 
-				for (int imA = 0; imA < m_m; ++imA)
-				{
-					C.reserve_col(imA, sparsity[imA]);
-					C.reserve_data(imA, sparsity[imA]);
-				}
+				for (int imA = 0; imA < m; ++imA)
+					C.reserve(imA, sparsity[imA].size());
+				
 				//perform matrix-matrix product
 				//scan each row of A 
-				for (int imA = 0; imA < m_m; ++imA)
+				for (int imA = 0; imA < m; ++imA)
 				{	//scan each column in that row of A, its col number...
 					for (int inA = 0; inA < A.colSize(imA); ++inA)
 					{
@@ -99,7 +100,7 @@ namespace BlockSp
 			else
 			{
 				//pre determine sparsity structure 
-				std::vector<int> sparsity(m_n, 0);
+				std::vector<std::unordered_set<int>> sparsity(n);
 				for (int imA = 0; imA < A.m(); ++imA) //scan each row of A 
 				{	//scan each column in that row of A, for transpose its row number is now col num which ...
 					for (int inA = 0; inA < A.colSize(imA); ++inA)
@@ -107,15 +108,16 @@ namespace BlockSp
 						int colIndA = A.colInd(imA, inA);
 						//...becomes the row number in B, scan each column in that row of B 
 						for (int inB = 0; inB < B.colSize(imA); ++inB)
-							++sparsity[colIndA];
+						{
+							int colIndB = B.colInd(imA, inB);
+							sparsity[colIndA].emplace(colIndB);
+						}
 					}
 				}
 				//reserve space in the BlockSp's vectors, matching the sparsity structure 
-				for (int inA = 0; inA < m_n; ++inA)
-				{
-					C.reserve_col(inA, sparsity[inA]);
-					C.reserve_data(inA, sparsity[inA]);
-				}
+				for (int inA = 0; inA < n; ++inA)
+					C.reserve(inA, sparsity[inA].size());
+				
 				//perform matrix-matrix product
 				//scan each row of A 
 				for (int imA = 0; imA < A.m(); ++imA)
@@ -168,7 +170,7 @@ namespace BlockSp
 		///A^T if transpose. 
 		///This function also encapsulates scalar cases, D = 1.
 		template<typename T, int B, int D = 1>
-		solArray<T, B, D> blkSpMatVec(const BlockSp<T, B>& A, const solArray<T, B, D>& x, 
+		solArray<T, B, D> blkSpMatVec(const BlockSp<T, B>& A, const solArray<T, B, D>& x,
 			int dim = -1, bool transpose = false)
 		{
 			if (!transpose) assert(A.n() == x.extent(0));
@@ -179,27 +181,28 @@ namespace BlockSp
 			{
 				int nRows = A.m();
 				solArray<T, B, D> b{ nRows };
-				for (int im = 0; im < nRows; ++im)
-				{
-					int in = 0;
-					for (const auto& a : A.get_data(im))
-					{
-						int col = A.colInd(im, in);
-						if(dim >= 0) b(im, dim) += dense::matVec<T, B, B>(a, x(col, dim));
-						else for (int dim2 = 0; dim2 < D; ++dim2)
-							b(im, dim2) += dense::matVec<T, B, B>(a, x(col, dim2));
-						++in;
-					}
-				}
+
+				if (dim >= 0)
+					for (int im = 0; im < nRows; ++im)
+						for (const auto& a : A.get_entries(im))
+							b(im, dim) += dense::matVec<T, B, B>(a.data(), x(a.colInd(), dim));
+				else
+					for (int im = 0; im < nRows; ++im)
+						for (const auto& a : A.get_entries(im))
+							for (int dim2 = 0; dim2 < D; ++dim2)
+								b(im, dim2) += dense::matVec<T, B, B>(a.data(), x(a.colInd(), dim2));
 				return b;
 			}
 			else
 			{
 				solArray<T, B, D> b{ A.n() };
-				for (const auto& index : A.getIndices())
-					if(dim >= 0) b(index(1), dim) += dense::matVec_transpose<T, B, B>(A(index), x(index(0), dim));
-					else for (int dim2 = 0; dim2 < D; ++dim2)
-						b(index(1), dim2) += dense::matVec_transpose<T, B, B>(A(index), x(index(0), dim2));
+				if (dim >= 0)
+					for (const auto& index : A.getIndices())
+						b(index(1), dim) += dense::matVec_transpose<T, B, B>(A(index), x(index(0), dim));
+				else
+					for (const auto& index : A.getIndices())
+						for (int dim2 = 0; dim2 < D; ++dim2)
+							b(index(1), dim2) += dense::matVec_transpose<T, B, B>(A(index), x(index(0), dim2));
 				return b;
 			}
 		}
@@ -217,18 +220,13 @@ namespace BlockSp
 				int nRows = A.m();
 				solArray<T, B, D> b{ nRows };
 				for (int im = 0; im < nRows; ++im)
-				{
-					int in = 0;
-					for (const auto& a : A.get_data(im))
+					for (const auto& a : A.get_entries(im))
 					{
-						int col = A.colInd(im, in);
-						auto xLoc(util::tvConcat<T, B, D>(x(col)));
-						blitz::TinyVector<T, B* D> ph{ dense::matVec<T, B * D, B * D>(a, xLoc) };
+						auto xLoc(util::tvConcat<T, B, D>(x(a.colInd())));
+						blitz::TinyVector<T, B* D> ph{ dense::matVec<T, B * D, B * D>(a.data(), xLoc) };
 						for (int dim = 0; dim < D; ++dim)
 							b(im, dim) += util::tvSubset<T, B, D>(ph, dim);
-						++in;
 					}
-				}
 				return b;
 			}
 			else
@@ -250,7 +248,7 @@ namespace BlockSp
 		///A^T if transpose. 
 		///Adds to solArray b. This function also encapsulates scalar cases, D = 1.
 		template<typename T, int B, int D = 1>
-		void blkSpMatVec(solArray<T, B, D>& b, const BlockSp<T, B>& A, const solArray<T, B, D>& x, 
+		void blkSpMatVec(solArray<T, B, D>& b, const BlockSp<T, B>& A, const solArray<T, B, D>& x,
 			int dim = -1, bool transpose = false)
 		{
 			if (!transpose)
@@ -265,23 +263,26 @@ namespace BlockSp
 			}
 
 			if (!transpose)
-				for (int im = 0; im < A.m(); ++im)
-				{
-					int in = 0;
-					for (const auto& a : A.get_data(im))
-					{
-						int col = A.colInd(im, in);
-						if(dim >= 0) b(im, dim) += dense::matVec<T, B, B>(a, x(col, dim));
-						else for (int dim2 = 0; dim2 < D; ++dim2)
-							b(im, dim2) += dense::matVec<T, B, B>(a, x(col, dim2));
-						++in;
-					}
-				}
+				if (dim >= 0)
+					for (int im = 0; im < A.m(); ++im)
+						for (const auto& a : A.get_entries(im))
+							b(im, dim) += dense::matVec<T, B, B>(a.data(), x(a.colInd(), dim));
+				else
+					for (int im = 0; im < A.m(); ++im)
+						for (const auto& a : A.get_entries(im))
+						{
+							for (int dim2 = 0; dim2 < D; ++dim2)
+								b(im, dim2) += dense::matVec<T, B, B>(a.data(), x(a.colInd(), dim2));
+						}
+
 			else //Transpose verision currently less optimized
-				for (const auto& index : A.getIndices())
-					if(dim >= 0) b(index(1), dim) += dense::matVec_transpose<T, B, B>(A(index), x(index(0), dim));
-					else for (int dim2 = 0; dim2 < D; ++dim2)
-						b(index(1), dim2) += dense::matVec_transpose<T, B, B>(A(index), x(index(0), dim2));
+				if (dim >= 0)
+					for (const auto& index : A.getIndices())
+						b(index(1), dim) += dense::matVec_transpose<T, B, B>(A(index), x(index(0), dim));
+				else
+					for (const auto& index : A.getIndices())
+						for (int dim2 = 0; dim2 < D; ++dim2)
+							b(index(1), dim2) += dense::matVec_transpose<T, B, B>(A(index), x(index(0), dim2));
 		}
 
 		///Void-version matrix vector product (bsmv) between BDxBD BlockSp matrix with solArray of size BxD.
@@ -302,18 +303,13 @@ namespace BlockSp
 
 			if (!transpose)
 				for (int im = 0; im < A.m(); ++im)
-				{
-					int in = 0;
-					for (const auto& a : A.get_data(im))
+					for (const auto& a : A.get_entries(im))
 					{
-						int col = A.colInd(im, in);
-						auto xLoc(util::tvConcat<T, B, D>(x(col)));
-						blitz::TinyVector<T, B* D> ph{ dense::matVec<T, B * D, B * D>(a, xLoc) };
+						auto xLoc(util::tvConcat<T, B, D>(x(a.colInd())));
+						blitz::TinyVector<T, B* D> ph{ dense::matVec<T, B * D, B * D>(a.data(), xLoc) };
 						for (int dim = 0; dim < D; ++dim)
 							b(im, dim) += util::tvSubset<T, B, D>(ph, dim);
-						++in;
 					}
-				}
 			else //Transpose verision currently less optimized
 				for (const auto& index : A.getIndices())
 				{
@@ -365,7 +361,7 @@ namespace BlockSp
 	template<typename T, int B, int D = 1>
 	solArray<T, B, D> bsmv(const BlockSp<T, B>& A, const solArray<T, B, D>& x, int dim = -1, bool transpose = false)
 	{
-		return mult_detail::blkSpMatVec<T, B, D>(A, x, dim , transpose);
+		return mult_detail::blkSpMatVec<T, B, D>(A, x, dim, transpose);
 	}
 
 	///BlockSp matrix-vector multiply.

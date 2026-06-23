@@ -2,7 +2,7 @@
 #define BLOCKSP_CONTAINERS_HPP
 
 #define BLOCKSP_VERSION_MAJOR 1
-#define BLOCKSP_VERSION_MINOR 0
+#define BLOCKSP_VERSION_MINOR 1
 
 #include <blitz/array.h>
 #include <unordered_map>
@@ -88,6 +88,58 @@ namespace BlockSp
 	///////////////////////////////////////
 	namespace Sp
 	{
+
+		//Entries into the CSR sparse matrix include the column index and value at that index.
+		template<typename T>
+		class Entry
+		{
+		private:
+			int m_colIndex;	//the column index
+			T m_data;				//the data value: templated on type T.
+
+		public:
+			
+			///constructors
+			Entry() : m_colIndex{ -1 }, m_data{} {}
+			Entry(int colInd, T data) : m_colIndex{ colInd }, m_data{ data } {}
+			
+			///destructor
+			~Entry() {}
+
+			///copy constructor
+			Entry(const Entry& other)
+			{
+				m_colIndex = other.m_colIndex;
+				m_data = other.m_data;
+			}
+			
+			///copy assignment
+			Entry& operator= (const Entry& other)
+			{
+				m_colIndex = other.m_colIndex;
+				m_data = other.m_data;
+				return *this;
+			}
+
+			///Move constructor
+			Entry(Entry<T>&& other) : m_colIndex{ other.m_colIndex }, m_data{ std::move(other.m_data) } {}
+
+			///Move assignment
+			Entry& operator=(Entry<T>&& other)
+			{
+				m_colIndex = other.m_colIndex;
+				std::swap(m_data, other.m_data);
+				return *this;
+			}
+
+			///member functions
+			int& colInd() { return m_colIndex; }
+			const int& colInd() const { return m_colIndex; }
+			T& data() { return m_data; }
+			const T& data() const { return m_data; }
+		};
+
+
 		///Sp::CSR - A general templated Condensed Sparse Row Storage (CSR) matrix
 		template<typename T>
 		class CSR
@@ -101,9 +153,9 @@ namespace BlockSp
 			int m_m, m_n, nnz;   ///< m_m = # of rows, m_n = # of columns, nnz = # of non-zeros in sparse matrix
 			T m_zero;						 ///< data type T's zero value
 
-			///CSR storage vectors, m_data[p][q] contains the (p, m_colIndex[p][q]) element of the matrix.
-			std::vector<std::vector<T>>		 m_data;
-			std::vector<std::vector<int>>  m_colIndex;
+			///CSR entry storage vector, each entry[p][q] contains
+			///the (p, colIndex[p][q]) element of the matrix and the column index.
+			std::vector<std::vector<Entry<T>>>	m_entries;
 
 		public:
 
@@ -115,17 +167,17 @@ namespace BlockSp
 			CSR() : m_zero{ 0.0 }, m_m{ 0 }, m_n{ 0 }, nnz{ 0 } {}
 
 			///mxn matrix
-			CSR(int m, int n) : m_data(m), m_colIndex(m),
+			CSR(int m, int n) : m_entries(m),
 				m_zero{ 0.0 }, m_m{ m }, m_n{ n }, nnz{ 0 } {
 			}
 
 			///Matrix size given by TinyVector
-			CSR(const blitz::TinyVector<int, 2>& size) : m_data(size(0)), m_colIndex(size(0)),
+			CSR(const blitz::TinyVector<int, 2>& size) : m_entries(size(0)),
 				m_zero{ 0.0 }, m_m{ size(0) }, m_n{ size(1) }, nnz{ 0 } {
 			}
 
 			///Square nxn matrix
-			CSR(int n) : m_data(n), m_colIndex(n),
+			CSR(int n) : m_entries(n), 
 				m_zero{ 0.0 }, m_m{ n }, m_n{ n }, nnz{ 0 } {
 			}
 
@@ -135,8 +187,7 @@ namespace BlockSp
 				m_n = other.m_n;
 				nnz = other.nnz;
 				m_zero = other.m_zero;
-				m_data = other.m_data;
-				m_colIndex = other.m_colIndex;
+				m_entries = other.m_entries;
 				return *this;
 			}
 
@@ -152,15 +203,14 @@ namespace BlockSp
 					<< blitz::TinyVector<int, 2>(m_m, m_n) << std::endl;
 				assert(0 <= i && i < m_m && 0 <= j && j < m_n);
 
-				//if the index is already in m_colindex return its value
-				for (int in = 0; in < m_colIndex[i].size(); in++)
-					if (m_colIndex[i][in] == j)	return m_data[i][in];
+				//if the index already exists, return its value
+				for (int in = 0; in < m_entries[i].size(); in++)
+					if (m_entries[i][in].colInd() == j)	return m_entries[i][in].data();
 
 				//else add new index and make it zero
-				m_colIndex[i].push_back(j);
-				m_data[i].push_back(m_zero);
+				m_entries[i].push_back(Entry(j, m_zero));
 				++nnz;
-				return m_data[i].back();
+				return m_entries[i].back().data();
 			}
 
 			///Const indexing (i,j)
@@ -172,9 +222,9 @@ namespace BlockSp
 					<< blitz::TinyVector<int, 2>(m_m, m_n) << std::endl;
 				assert(0 <= i && i < m_m && 0 <= j && j < m_n);
 
-				//if the index is already in m_colindex return its value
-				for (int in = 0; in < m_colIndex[i].size(); in++)
-					if (m_colIndex[i][in] == j)	return m_data[i][in];
+				//if the index already exists, return its value
+				for (int in = 0; in < m_entries[i].size(); in++)
+					if (m_entries[i][in].colInd() == j)	return m_entries[i][in].data();
 				return m_zero; //else return zero
 			}
 
@@ -194,38 +244,32 @@ namespace BlockSp
 			{
 				assert(0 <= i && i < m_m && 0 <= j && j < m_n);
 				//if the index is already in m_colindex return its value
-				for (int in = 0; in < m_colIndex[i].size(); in++)
-					if (m_colIndex[i][in] == j)	return m_data[i][in];
+				for (int in = 0; in < m_entries[i].size(); in++)
+					if (m_entries[i][in].colInd() == j)	return m_entries[i][in].data();
 				return m_zero; //else return zero
 			}
 
 			const T& at(int i, int j) const
 			{
 				assert(0 <= i && i < m_m && 0 <= j && j < m_n);
-				for (int in = 0; in < m_colIndex[i].size(); in++)
-					if (m_colIndex[i][in] == j)	return m_data[i][in];
+				for (int in = 0; in < m_entries[i].size(); in++)
+					if (m_entries[i][in].colInd() == j)	return m_entries[i][in].data();
 				return m_zero;
 			}
 
 			///See if matrix is nonzero at (i,j) 
 			inline bool scan(int i, int j) const
 			{
-				for (int in = 0; in < m_colIndex[i].size(); ++in)
-					if (m_colIndex[i][in] == j)	return true;
+				for (int in = 0; in < m_entries[i].size(); ++in)
+					if (m_entries[i][in].colInd() == j)	return true;
 				return false;
 			}
 
-			///Access the m_data vectors
-			const std::vector<std::vector<T>>& get_data() const { return m_data; }
-			std::vector<std::vector<T>>& get_data() { return m_data; }
-			const std::vector<T>& get_data(int im) const { return m_data[im]; }
-			std::vector<T>& get_data(int im) { return m_data[im]; }
-
-			///Access the m_colIndex vectors
-			const std::vector<std::vector<int>>& get_colIndex() const { return m_colIndex; }
-			std::vector<std::vector<int>>& get_colIndex() { return m_colIndex; }
-			const std::vector<int>& get_colIndex(int im) const { return m_colIndex[im]; }
-			std::vector<int>& get_colIndex(int im) { return m_colIndex[im]; }
+			///Access the entry vectors
+			const std::vector<std::vector<Entry<T>>>& get_entries() const { return m_entries; }
+			std::vector<std::vector<Entry<T>>>& get_entries() { return m_entries; }
+			const std::vector<Entry<T>>& get_entries(int im) const { return m_entries[im]; }
+			std::vector<Entry<T>>& get_entries(int im) { return m_entries[im]; }
 
 			///////////////////////////
 			//Matrix information
@@ -246,16 +290,23 @@ namespace BlockSp
 			inline int n() const { return m_n; }
 			inline int nz() const { return nnz; }
 
-			///Get size of a row's column index vector,
-			inline size_t colSize(int im) const { return m_colIndex[im].size(); }
+			///Get size of a row's entry vector (number of cols in that row).
+			inline size_t colSize(int im) const { return m_entries[im].size(); }
 
-			///Get column index
-			inline int colInd(int im, int in) const { return m_colIndex[im][in]; }
-			inline int colInd(const blitz::TinyVector<int, 2>& ind) const { return m_colIndex[ind(0)][ind(1)]; }
-			inline const std::vector<int>& colInd(int im) const { return m_colIndex[im]; }
+			///Get column index/indices
+			inline int colInd(int im, int in) const { return m_entries[im][in].colInd(); }
+			inline int colInd(const blitz::TinyVector<int, 2>& ind) const { return m_entries[ind(0)][ind(1)].colInd(); }
+			inline std::vector<int> colInd(int im) const
+			{
+				std::vector<int> cols;
+				cols.reserve(m_entries[im].size());
+				for (const auto& ent : m_entries[im])
+					cols.push_back(ent.colInd());
+				return cols;
+			}
 
 			///Increase column size.
-			///Note: this function does not modify m_data or m_colIndex
+			///Note: this function is for bookkeeping and does not modify m_entries
 			inline void addCol(int nCol = 1) { m_n += nCol; }
 
 			////////////////////////////
@@ -267,9 +318,9 @@ namespace BlockSp
 			{
 				CSR<T> trans(m_n, m_m);
 				for (int im = 0; im < m_m; im++)
-					for (int in = 0; in < m_colIndex[im].size(); in++)
-						if constexpr (is_complex_v<T>) trans(m_colIndex[im][in], im) = std::conj(m_data[im][in]);
-						else trans(m_colIndex[im][in], im) = m_data[im][in];
+					for (int in = 0; in < m_entries[im].size(); in++)
+						if constexpr (is_complex_v<T>) trans(m_entries[im][in].colInd(), im) = std::conj(m_entries[im][in].data());
+						else trans(m_entries[im][in].colInd(), im) = m_entries[im][in].data();
 				return trans;
 			}
 
@@ -278,9 +329,9 @@ namespace BlockSp
 			{
 				CSR<T> low(m_m, m_n);
 				for (int im = 0; im < m_m; im++)
-					for (int in = 0; in < m_colIndex[im].size(); in++)
-						if (m_colIndex[im][in] - i <= im)
-							low(im, m_colIndex[im][in]) = this ->operator()(im, m_colIndex[im][in]);
+					for (int in = 0; in < m_entries[im].size(); in++)
+						if (m_entries[im][in].colInd() - i <= im)
+							low(im, m_entries[im][in].colInd()) = this ->operator()(im, m_entries[im][in].colInd());
 				return low;
 			}
 
@@ -289,9 +340,9 @@ namespace BlockSp
 			{
 				CSR<T> up(m_m, m_n);
 				for (int im = 0; im < m_m; im++)
-					for (int in = 0; in < m_colIndex[im].size(); in++)
-						if (m_colIndex[im][in] - i >= im)
-							up(im, m_colIndex[im][in]) = this->operator()(im, m_colIndex[im][in]);
+					for (int in = 0; in < m_entries[im].size(); in++)
+						if (m_entries[im][in].colInd() - i >= im)
+							up(im, m_entries[im][in].colInd()) = this->operator()(im, m_entries[im][in].colInd());
 				return up;
 			}
 
@@ -303,8 +354,8 @@ namespace BlockSp
 			{
 				assert(other.m_m == m_m && other.m_n == m_n);
 				for (int im = 0; im < m_m; ++im)
-					for (int in = 0; in < other.m_colIndex[im].size(); ++in)
-						this->operator()(im, other.m_colIndex[im][in]) += other(im, other.m_colIndex[im][in]);
+					for (int in = 0; in < other.m_entries[im].size(); ++in)
+						this->operator()(im, other.m_entries[im][in].colInd()) += other(im, other.m_entries[im][in].colInd());
 				return *this;
 			}
 
@@ -312,8 +363,8 @@ namespace BlockSp
 			{
 				assert(other.m_m == m_m && other.m_n == m_n);
 				for (int im = 0; im < m_m; ++im)
-					for (int in = 0; in < other.m_colIndex[im].size(); ++in)
-						this->operator()(im, other.m_colIndex[im][in]) -= other(im, other.m_colIndex[im][in]);
+					for (int in = 0; in < other.m_entries[im].size(); ++in)
+						this->operator()(im, other.m_entries[im][in].colInd()) -= other(im, other.m_entries[im][in].colInd());
 				return *this;
 			}
 
@@ -322,8 +373,8 @@ namespace BlockSp
 				assert(other.m_m == m_m && other.m_n == m_n);
 				CSR<T> plus = *this;
 				for (int im = 0; im < m_m; ++im)
-					for (int in = 0; in < other.m_colIndex[im].size(); ++in)
-						plus(im, other.m_colIndex[im][in]) += other(im, other.m_colIndex[im][in]);
+					for (int in = 0; in < other.m_entries[im].size(); ++in)
+						plus(im, other.m_entries[im][in].colInd()) += other(im, other.m_entries[im][in].colInd());
 				return plus;
 			}
 
@@ -332,24 +383,24 @@ namespace BlockSp
 				assert(other.m_m == m_m && other.m_n == m_n);
 				CSR<T> minus = *this;
 				for (int im = 0; im < m_m; ++im)
-					for (int in = 0; in < other.m_colIndex[im].size(); ++in)
-						minus(im, other.m_colIndex[im][in]) -= other(im, other.m_colIndex[im][in]);
+					for (int in = 0; in < other.m_entries[im].size(); ++in)
+						minus(im, other.m_entries[im][in].colInd()) -= other(im, other.m_entries[im][in].colInd());
 				return minus;
 			}
 
 			CSR<T>& operator*= (T val)
 			{
 				for (int im = 0; im < m_m; ++im)
-					for (int in = 0; in < m_colIndex[im].size(); ++in)
-						this->operator()(im, m_colIndex[im][in]) *= val;
+					for (auto& ent : m_entries[im])
+						ent.data() *= val;
 				return *this;
 			}
 
 			CSR<T>& operator/= (T val)
 			{
 				for (int im = 0; im < m_m; ++im)
-					for (int in = 0; in < m_colIndex[im].size(); ++in)
-						this->operator()(im, m_colIndex[im][in]) /= val;
+					for (auto& ent : m_entries[im])
+						ent.data() /= val;
 				return *this;
 			}
 
@@ -361,8 +412,8 @@ namespace BlockSp
 			{
 				assert(other.m_m >= m_m && other.m_n == m_n);
 				for (int im = 0; im < m_m; ++im)
-					for (int in = 0; in < other.m_colIndex[im].size(); ++in)
-						this->operator()(im, other.m_colIndex[im][in]) += other(im, other.m_colIndex[im][in]);
+					for (int in = 0; in < other.m_entries[im].size(); ++in)
+						this->operator()(im, other.m_entries[im][in].colInd()) += other(im, other.m_entries[im][in].colInd());
 				return *this;
 			}
 
@@ -371,8 +422,8 @@ namespace BlockSp
 			{
 				assert(other.m_m >= m_m && other.m_n == m_n);
 				for (int im = 0; im < m_m; ++im)
-					for (int in = 0; in < other.m_colIndex[im].size(); ++in)
-						this->operator()(im, other.m_colIndex[im][in]) -= other(im, other.m_colIndex[im][in]);
+					for (int in = 0; in < other.m_entries[im].size(); ++in)
+						this->operator()(im, other.m_entries[im][in].colInd()) -= other(im, other.m_entries[im][in].colInd());
 				return *this;
 			}
 
@@ -381,8 +432,8 @@ namespace BlockSp
 			{
 				std::vector<blitz::TinyVector<int, 2>> indices;
 				for (int im = 0; im < m_m; im++)
-					for (int in = 0; in < m_colIndex[im].size(); in++)
-						indices.push_back(blitz::TinyVector<int, 2>(im, m_colIndex[im][in]));
+					for (int in = 0; in < m_entries[im].size(); in++)
+						indices.push_back(blitz::TinyVector<int, 2>(im, m_entries[im][in].colInd()));
 				return indices;
 			}
 
@@ -391,8 +442,8 @@ namespace BlockSp
 			{
 				std::vector<int> ind;
 				for (int im = 0; im < m_m; ++im)
-					for (const auto& col : m_colIndex[im])
-						if (col == iCol) ind.push_back(im);
+					for (const auto& ent : m_entries[im])
+						if (ent.colInd() == iCol) ind.push_back(im);
 				return ind;
 			}
 
@@ -401,8 +452,8 @@ namespace BlockSp
 			{
 				std::unordered_set<int> ind;
 				for (int im = 0; im < m_m; ++im)
-					for (const auto& col : m_colIndex[im])
-						if (col == iCol) ind.emplace(im);
+					for (const auto& ent : m_entries[im])
+						if (ent.colInd() == iCol) ind.emplace(im);
 				return ind;
 			}
 
@@ -411,8 +462,8 @@ namespace BlockSp
 			{
 				std::vector<std::unordered_set<int>> ind(n()) ;
 				for (int im = 0; im < m_m; ++im)
-					for (const auto& col : m_colIndex[im])
-						ind[col].emplace(im);
+					for (const auto& ent : m_entries[im])
+						ind[ent.colInd()].emplace(im);
 				return ind;
 			}
 
@@ -424,8 +475,8 @@ namespace BlockSp
 				for (int im = 0; im < m_m; im++)
 				{
 					T prod = 0.0;
-					for (int in = 0; in < m_colIndex[im].size(); in++) //sparse multiplication
-						prod += m_data[im][in] * v[m_colIndex[im][in]];
+					for (int in = 0; in < m_entries[im].size(); in++) //sparse multiplication
+						prod += m_entries[im][in].data() * v[m_entries[im][in].colInd()];
 					product[im] = prod;
 				}
 				return product;
@@ -437,29 +488,13 @@ namespace BlockSp
 			inline void shrink_to_fit()
 			{
 				for (int im = 0; im < m_m; ++im)
-				{
-					m_colIndex[im].shrink_to_fit();
-					m_data[im].shrink_to_fit();
-				}
+					m_entries[im].shrink_to_fit();
 			}
 
-			///Reserve space in the column index vector
-			inline void reserve_col(int im, int size)
+			///Reserve space in a row of the entry vectors
+			inline void reserve(int im, int size)
 			{
-				m_colIndex[im].reserve(size);
-			}
-
-			///Reserve space in the data vector
-			inline void reserve_data(int im, int size)
-			{
-				m_data[im].reserve(size);
-			}
-
-			///Reserve space in both column index and data vectors
-			inline void reserve_col_and_data(int im, int size)
-			{
-				reserve_col(im, size);
-				reserve_data(im, size);
+				m_entries[im].reserve(size);
 			}
 
 			///Print sparse matrix. nRows is number of rows printed, default all.
@@ -468,10 +503,10 @@ namespace BlockSp
 				int p_m = nRows < 0 ? m_m : nRows;
 				for (int im = 0; im < p_m; im++)
 				{
-					for (int in = 0; in < m_colIndex[im].size(); in++)
+					for (int in = 0; in < m_entries[im].size(); in++)
 					{
 						std::cout << "(";
-						std::cout << im << "," << m_colIndex[im][in] << ": " << m_data[im][in];
+						std::cout << im << "," << m_entries[im][in].colInd() << ": " << m_entries[im][in].data();
 						std::cout << ")";
 					}
 					std::cout << std::endl;
@@ -484,10 +519,10 @@ namespace BlockSp
 				int p_m = nRows < 0 ? m_m : nRows;
 				for (int im = 0; im < p_m; ++im)
 				{
-					for (int in = 0; in < m_colIndex[im].size(); in++)
+					for (int in = 0; in < m_entries[im].size(); in++)
 					{
 						std::cout << "(";
-						std::cout << im << "," << m_colIndex[im][in] << ") ";
+						std::cout << im << "," << m_entries[im][in].colInd() << ") ";
 					}
 					std::cout << std::endl;
 				}

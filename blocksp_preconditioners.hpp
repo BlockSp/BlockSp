@@ -140,21 +140,16 @@ namespace BlockSp::preConditioners
 			for (int im = 0; im < A.m(); ++im)
 			{
 				blitz::TinyVector<T, B* D> ph(0.0);
-				int in = 0;
-				for (const auto& a : A.get_data(im))
-				{
-					int colInd = A.colInd(im, in);
-					if (colInd != im)
+				for (const auto& a : A.get_entries(im))
+					if (a.colInd() != im)
 					{
-						if constexpr (D == 1) ph += dense::matVec<T, B* D, B* D>(a, x(colInd));
+						if constexpr (D == 1) ph += dense::matVec<T, B* D, B* D>(a.data(), x(a.colInd()));
 						else
 						{
-							auto xLoc{ util::tvConcat<T, B, D>(x(colInd)) };
-							ph += dense::matVec<T, B* D, B* D>(a, xLoc);
+							auto xLoc{ util::tvConcat<T, B, D>(x(a.colInd())) };
+							ph += dense::matVec<T, B* D, B* D>(a.data(), xLoc);
 						}
 					}
-					++in;
-				}
 				if constexpr (D == 1) ph = b(im) - ph;
 				else ph = util::tvConcat<T, B, D>(b(im)) - ph;
 				AD_Inv[im].invmul(ph);
@@ -176,21 +171,16 @@ namespace BlockSp::preConditioners
 			for (int im = A.m() - 1; im >= 0; --im)
 			{
 				blitz::TinyVector<T, B* D> ph(0.0);					//ph stands for placeholder
-				int in = 0;
-				for (const auto& a : A.get_data(im))
-				{
-					int colInd = A.colInd(im, in);
-					if (colInd != im)
+				for (const auto& a : A.get_entries(im))
+					if (a.colInd() != im)
 					{
-						if constexpr (D == 1) ph += dense::matVec<T, B* D, B* D>(a, x(colInd));
+						if constexpr (D == 1) ph += dense::matVec<T, B* D, B* D>(a.data(), x(a.colInd()));
 						else
 						{
-							auto xLoc{ util::tvConcat<T, B, D>(x(colInd)) };
-							ph += dense::matVec<T, B* D, B* D>(a, xLoc);
+							auto xLoc{ util::tvConcat<T, B, D>(x(a.colInd())) };
+							ph += dense::matVec<T, B* D, B* D>(a.data(), xLoc);
 						}
 					}
-					++in;
-				}
 				if constexpr (D == 1) ph = b(im) - ph;
 				else ph = util::tvConcat<T, B, D>(b(im)) - ph;
 				AD_Inv[im].invmul(ph);
@@ -284,9 +274,9 @@ namespace BlockSp::preConditioners
 
 				//Gaussian eliminate the remaining rows/columns
 				for (const auto& k : rowInd[i]) if (k > i)
-					for (const auto& j : A.colInd(k)) if (j > i)
-						if (rowInd[j].contains(i))
-							A(k, j) -= dense::matMat(A(k, i), A(i, j));
+					for (const auto& j : A.get_entries(k)) if (j.colInd() > i)
+						if (rowInd[j.colInd()].contains(i))
+							A(k, j.colInd()) -= dense::matMat(A(k, i), A(i, j.colInd()));
 			}
 		}
 
@@ -295,47 +285,35 @@ namespace BlockSp::preConditioners
 		{
 			//Solve L^-1 via forward substitution
 			for (int im = 1; im < n; ++im)
-			{
-				int in = 0;
-				for (const auto& lu : LU.get_data(im))
-				{
-					int col = LU.colInd(im, in);
-					if (col < im)
+				for (const auto& lu : LU.get_entries(im))
+					if (lu.colInd() < im)
 					{
-						if constexpr (D == 1) x(im) -= dense::matVec(lu, x(col));
+						if constexpr (D == 1) x(im) -= dense::matVec(lu.data(), x(lu.colInd()));
 						else
 						{
-							auto x_loc{ util::tvConcat<T, B, D>(x(col)) };
-							x_loc = dense::matVec(lu, x_loc);
+							auto x_loc{ util::tvConcat<T, B, D>(x(lu.colInd())) };
+							x_loc = dense::matVec(lu.data(), x_loc);
 							for (int dim = 0; dim < D; ++dim)
 								x(im, dim) -= util::tvSubset<T, B, D>(x_loc, dim);
 						}
 					}
-					++in;
-				}
 				//Diagonals of L are identity matrices.
-			}
 
 			//Solve U^-1 via backward substitution
 			for (int im = n - 1; im >= 0; --im)
 			{
-				int in = 0;
-				for (const auto& lu : LU.get_data(im))
-				{
-					int col = LU.colInd(im, in);
-					if (col > im)
+				for (const auto& lu : LU.get_entries(im))
+					if (lu.colInd() > im)
 					{
-						if constexpr (D == 1) x(im) -= dense::matVec(lu, x(col));
+						if constexpr (D == 1) x(im) -= dense::matVec(lu.data(), x(lu.colInd()));
 						else
 						{
-							auto x_loc{ util::tvConcat<T, B, D>(x(col)) };
-							x_loc = dense::matVec(lu, x_loc);
+							auto x_loc{ util::tvConcat<T, B, D>(x(lu.colInd())) };
+							x_loc = dense::matVec(lu.data(), x_loc);
 							for (int dim = 0; dim < D; ++dim)
 								x(im, dim) -= util::tvSubset<T, B, D>(x_loc, dim);
 						}
 					}
-					++in;
-				}
 				//Invert diagonals
 				if constexpr (D == 1) D_Inv[im].invmul(x(im));
 				else
@@ -422,9 +400,9 @@ namespace BlockSp::preConditioners
 
 				//Gaussian eliminate the remaining rows/columns
 				for (const auto& k : rowInd[i]) if (k > i)
-					for (const auto& j : A_l.colInd(k)) if (j > i && j <= k)
-						if (rowInd[j].contains(i))
-							A_l(k, j) -= dense::matMat(A_l(k, i), dense::transpose(A_l(j, i)));
+					for (const auto& j : A_l.get_entries(k)) if (j.colInd() > i && j.colInd() <= k)
+						if (rowInd[j.colInd()].contains(i))
+							A_l(k, j.colInd()) -= dense::matMat(A_l(k, i), dense::transpose(A_l(j.colInd(), i)));
 			}
 		}
 
@@ -434,23 +412,18 @@ namespace BlockSp::preConditioners
 			//Solve L^-1 via forward substitution
 			for (int im = 0; im < n; ++im)
 			{
-				int in = 0;
-				for (const auto& lu : L.get_data(im))
-				{
-					int col = L.colInd(im, in);
-					if (col < im)
+				for (const auto& l : L.get_entries(im))
+					if (l.colInd() < im)
 					{
-						if constexpr (D == 1) x(im) -= dense::matVec(lu, x(col));
+						if constexpr (D == 1) x(im) -= dense::matVec(l.data(), x(l.colInd()));
 						else
 						{
-							auto x_loc{ util::tvConcat<T, B, D>(x(col)) };
-							x_loc = dense::matVec(lu, x_loc);
+							auto x_loc{ util::tvConcat<T, B, D>(x(l.colInd())) };
+							x_loc = dense::matVec(l.data(), x_loc);
 							for (int dim = 0; dim < D; ++dim)
 								x(im, dim) -= util::tvSubset<T, B, D>(x_loc, dim);
 						}
 					}
-					++in;
-				}
 				//Invert diagonals L_ii, triangular solve via forward substitution
 				if constexpr (D == 1)	Lii_Inv_forward_subst(L(im, im), x(im));
 				else
