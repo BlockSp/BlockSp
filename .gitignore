@@ -1,0 +1,10 @@
+*.vcxproj
+*.vcxproj.filters
+*.sln
+*.vcxproj.user
+.vs/
+build/
+x64/ 
+Release/
+Debug/
+ToDo.txt
